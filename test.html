@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Projection Visualizer - [[1,2],[3,4]]</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: sans-serif;
+            overflow: hidden;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            background: #444;
+            color: white;
+            border: 1px solid #666;
+            padding: 10px 15px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            background: #666;
+        }
+
+        .label {
+            font-weight: bold;
+            color: #00ffcc;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info">
+        <h2>Grid: [[1, 2], [3, 4]]</h2>
+        <p>Total Projection Area: <span class="label">17</span></p>
+        <ul>
+            <li>Top (XY): <span style="color: #ff4444">4</span></li>
+            <li>Front (ZX): <span style="color: #44ff44">7 (max of columns)</span></li>
+            <li>Side (YZ): <span style="color: #4444ff">6 (max of rows)</span></li>
+        </ul>
+    </div>
+    <div id="controls">
+        <button onclick="setView('iso')">Isometric View</button>
+        <button onclick="setView('top')">Top View (XY)</button>
+        <button onclick="setView('front')">Front View (ZX)</button>
+        <button onclick="setView('side')">Side View (YZ)</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Setup ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        const gridData = [[1, 2], [3, 4]];
+        const n = gridData.length;
+
+        // --- Lights ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(5, 10, 7);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // --- Materials ---
+        const cubeMat = new THREE.MeshPhongMaterial({ color: 0x00aaff, flatShading: true });
+        const xyMat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+        const yzMat = new THREE.MeshBasicMaterial({ color: 0x4444ff, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+        const zxMat = new THREE.MeshBasicMaterial({ color: 0x44ff44, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+
+        // --- Object Group ---
+        const group = new THREE.Group();
+        scene.add(group);
+
+        // Draw Cubes
+        gridData.forEach((row, i) => {
+            row.forEach((v, j) => {
+                if (v > 0) {
+                    const geometry = new THREE.BoxGeometry(0.9, v, 0.9);
+                    const cube = new THREE.Mesh(geometry, cubeMat);
+                    // Position cubes so they sit on the floor
+                    cube.position.set(i - n / 2 + 0.5, v / 2, j - n / 2 + 0.5);
+                    group.add(cube);
+                }
+            });
+        });
+
+        // --- Projections (Shadows) ---
+
+        // 1. XY Projection (Floor)
+        gridData.forEach((row, i) => {
+            row.forEach((v, j) => {
+                if (v > 0) {
+                    const plane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), xyMat);
+                    plane.rotation.x = -Math.PI / 2;
+                    plane.position.set(i - n / 2 + 0.5, 0, j - n / 2 + 0.5);
+                    group.add(plane);
+                }
+            });
+        });
+
+        // 2. YZ Projection (Side - Max of Rows)
+        for (let i = 0; i < n; i++) {
+            let maxH = Math.max(...gridData[i]);
+            if (maxH > 0) {
+                const plane = new THREE.Mesh(new THREE.PlaneGeometry(maxH, 1), yzMat);
+                plane.rotation.y = Math.PI / 2;
+                plane.rotation.z = Math.PI / 2;
+                // Align to the back wall
+                plane.position.set(i - n / 2 + 0.5, maxH / 2, n / 2);
+                group.add(plane);
+            }
+        }
+
+        // 3. ZX Projection (Front - Max of Columns)
+        for (let j = 0; j < n; j++) {
+            let maxH = 0;
+            for (let i = 0; i < n; i++) maxH = Math.max(maxH, gridData[i][j]);
+            if (maxH > 0) {
+                const plane = new THREE.Mesh(new THREE.PlaneGeometry(1, maxH), zxMat);
+                plane.position.set(-n / 2, maxH / 2, j - n / 2 + 0.5);
+                plane.rotation.y = Math.PI / 2;
+                group.add(plane);
+            }
+        }
+
+        // Helper: Grid floor for context
+        const helper = new THREE.GridHelper(10, 10, 0x444444, 0x222222);
+        scene.add(helper);
+
+        // Camera Positioning
+        camera.position.set(5, 5, 5);
+        controls.update();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle Resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // View Switcher
+        window.setView = (view) => {
+            switch (view) {
+                case 'top':
+                    camera.position.set(0, 8, 0);
+                    controls.target.set(0, 0, 0);
+                    break;
+                case 'front':
+                    camera.position.set(-8, 2, 0);
+                    controls.target.set(0, 1, 0);
+                    break;
+                case 'side':
+                    camera.position.set(0, 2, 8);
+                    controls.target.set(0, 1, 0);
+                    break;
+                case 'iso':
+                    camera.position.set(5, 5, 5);
+                    controls.target.set(0, 0, 0);
+                    break;
+            }
+        };
+    </script>
+</body>
+
+</html>
